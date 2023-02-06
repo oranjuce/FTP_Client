@@ -1,0 +1,287 @@
+#!/usr/bin/env python3
+
+import argparse
+import urllib.parse
+import socket
+import os
+
+# Create an argument parser
+parser = argparse.ArgumentParser()
+
+# Add an argument for the operation being executed
+parser.add_argument("operation", help="The FTP command to execute (e.g., ls)")
+
+# Parameters for a path to a file on the local filesystem, or a URL to a file or directory on an FTP server
+parser.add_argument("parameters", nargs='+', help="The FTP URL (e.g., ftp://[USER[:PASSWORD]@]HOST[:PORT]/PATH")
+
+# Parse the arguments
+args = parser.parse_args()
+
+# Define the operation
+OPERATION = args.operation
+
+# Define an array of parameters
+PARAMETERS = args.parameters
+
+# Define the parameter that is a URL to an FTP server
+for param in PARAMETERS:
+    if param.startswith('ftp://'):
+        FTP_URL = param
+
+# Parses the URL for the necessary arguments by using the urllib.parse from the standard library
+def parse_ftp_url(url):
+    ''' 
+    Parameters: the URL to be parsed
+    Return: an array of the URL info, where: 
+        0 is the host
+        1 is the username
+        2 is the password
+        3 is the port
+        4 is the path
+    '''
+    # Parses the URL
+    result = urllib.parse.urlparse(url)
+
+    # Stores the hostname
+    host = result.hostname
+
+    # Stores the username, "anonymous" if none is supplied
+    if result.username:
+        username = result.username
+    else:
+        username = "anonymous"
+
+    # Stores the password, "" if none is supplied
+    if result.password:
+        password = result.password
+    else:
+        password = ""
+
+    # Stores the port number, 21 if none is supplied
+    if result.port:
+        port = result.port
+    else:
+        port = 21
+
+    # Stores the path
+    path = result.path
+    
+    return host, username, password, port, path
+
+# Parses the FTP URL
+PARSED_FTP_URL = parse_ftp_url(FTP_URL)
+
+# Extracts and stores the necessary information
+HOST = PARSED_FTP_URL[0]
+USERNAME = PARSED_FTP_URL[1]
+PASSWORD = PARSED_FTP_URL[2]
+PORT = PARSED_FTP_URL[3]
+PATH = PARSED_FTP_URL[4]
+
+# Create a TCP/IP socket
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+# Establishes the server connection
+server_address = (HOST, PORT)
+sock.connect(server_address)
+
+# Receive the initial welcome message from the FTP server
+response = sock.recv(4096).decode("utf-8")
+
+# Send the USER command to the FTP server
+user_command = f"USER {USERNAME}\r\n"
+sock.sendall(user_command.encode("utf-8"))
+
+# Receive the response from the FTP server
+response = sock.recv(4096).decode("utf-8")
+
+# If the response requires a password, send the PASS command
+if response.startswith("3"):
+    pass_command = f"PASS {PASSWORD}\r\n"
+    sock.sendall(pass_command.encode("utf-8"))
+
+    # Receive the response from the FTP server
+    response = sock.recv(4096).decode("utf-8")
+
+# Send the TYPE command to the FTP server
+type_command = "TYPE I\r\n"  # 'I' represents binary mode
+sock.sendall(type_command.encode("utf-8"))
+
+# Receive the response from the FTP server
+response = sock.recv(4096).decode("utf-8")
+
+# Send the MODE command to the FTP server
+type_command = "MODE S\r\n"  # 'S' represents stream mode
+sock.sendall(type_command.encode("utf-8"))
+
+# Receive the response from the FTP server
+response = sock.recv(4096).decode("utf-8")
+
+# Send the STRU command to the FTP server
+type_command = "STRU F\r\n"  # 'F' represents file-oriented mode
+sock.sendall(type_command.encode("utf-8"))
+
+# Receive the response from the FTP server
+response = sock.recv(4096).decode("utf-8")
+
+# Makes a directory at the supplied path
+def make_directory():
+    type_command = f"MKD {PATH}\r\n"
+    sock.sendall(type_command.encode("utf-8"))
+
+    response = sock.recv(4096).decode("utf-8")
+    communicate_response(response)
+
+# Removes a directory at the supplied path
+def remove_directory():
+    type_command = f"RMD {PATH}\r\n"
+    sock.sendall(type_command.encode("utf-8"))
+
+    response = sock.recv(4096).decode("utf-8")
+    communicate_response(response)
+
+# Removes a file at the supplied path
+def remove():
+    type_command = f"DELE {PATH}\r\n"
+    sock.sendall(type_command.encode("utf-8"))
+
+    response = sock.recv(4096).decode("utf-8")
+    communicate_response(response)
+
+# Establishes a passive data connection
+def establish_passive_connection():
+    type_command = "PASV\r\n" 
+    sock.sendall(type_command.encode("utf-8"))
+
+    # Receive the response from the FTP server
+    response = sock.recv(4096).decode("utf-8")
+
+    # Extracts the IP address (the first four 8-bit segments), and the port number (the last two numbers)
+    numbers = response[response.find("(") + 1:response.find(")")].split(",")
+
+    # Merges the bits of the IP address
+    ip_address = ".".join(numbers[:4])
+
+    # Converts the port number
+    port_number = int(numbers[4]) * 256 + int(numbers[5])
+
+    return ip_address, port_number
+
+# List the contents of the given directory on the FTP server
+def list():
+
+    # Establishes a passive connection to the FTP server, and stores the IP address and port number
+    data = establish_passive_connection()
+
+    # Connect to the specified address and port number for the data connection
+    data_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    data_address = (data[0], data[1])
+    data_sock.connect(data_address)
+
+    # Send the LIST command to the FTP server
+    type_command = "LIST\r\n"
+    sock.sendall(type_command.encode("utf-8"))
+
+    # Receive the response from the FTP server
+    response = data_sock.recv(4096).decode("utf-8")
+    display = response.split("\\r\\n")
+    for line in display:
+        print(line)
+
+    # Close the data connection
+    data_sock.close()
+
+# Copies the contents of one file to another
+def copy():
+
+    # Establishes a passive connection to the FTP server, and stores the IP address and port number
+    data = establish_passive_connection()
+
+    # Connect to the specified address and port number for the data connection
+    data_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    data_address = (data[0], data[1])
+    data_sock.connect(data_address)
+
+    # Raises a value error if two arguments are not supplied
+    if len(PARAMETERS) != 2:
+        raise ValueError("Copying requires two arguments")
+    else:
+        # If ARG1 is a URL, copy the file from the FTP server to the machine
+        if PARAMETERS[0].startswith('ftp://'):
+            # Send the RETR command to the FTP server
+            type_command = f"RETR {PATH}\r\n"
+            sock.sendall(type_command.encode("utf-8"))
+
+            # Receive the response from the FTP server
+            response = sock.recv(4096).decode("utf-8")
+            communicate_response(response)
+
+            with open(PARAMETERS[1], 'xb') as file:
+                data = b""    
+                while True:
+                    part = data_sock.recv(4096)
+                    data += part
+                    if not part:
+                        break
+                    file.write(data)
+        # if ARG1 is not a URL, ARG 2 is the URL, copy a file from the local machine to the FTP server
+        else:
+            # Send the STOR command to the FTP server
+            type_command = f"STOR {PATH}\r\n"
+            sock.sendall(type_command.encode("utf-8"))
+
+            # Receive the response from the FTP server
+            response = sock.recv(4096).decode("utf-8")
+            communicate_response(response)
+
+            with open(PARAMETERS[0], 'rb') as file:
+                file_contents = file.read()
+                data_sock.sendall(file_contents)
+
+    # Close the data connection
+    data_sock.close()
+
+# Moves the file given by ARG1 to the file given by ARG2
+def move():
+    copy()
+    # If ARG1 is a URL, we just copied a file from the FTP server to the local host
+    if PARAMETERS[0].startswith('ftp://'):
+        # We then remove the file from the server, essentially "moving" it to the local host
+        remove()
+    # If ARG1 is not a URL, we just copied a file from the local host to the FTP server
+    else:
+        # We then remove the file from the local host, essentially "moving" it to the FTP server
+        os.remove(PARAMETERS[0])
+
+# Communicates the FTP servers messages to the client
+def communicate_response(response):
+        if response.startswith('1'):
+            print("More action is expected")
+        elif response.startswith('2'):
+            print("Success!")
+        elif response.startswith('3'):
+            print("Preliminary success, more action required")
+        else:
+            print("Error. Double check your command and try again")
+
+# Executes the supplied operation 
+def execute():
+    if OPERATION == "mkdir":
+        make_directory()
+    elif OPERATION == "rmdir":
+        remove_directory()
+    elif OPERATION == "rm":
+        remove()
+    elif OPERATION == "ls":
+        list()
+    elif OPERATION == "cp":
+        copy()
+    elif OPERATION == "mv":
+        move()
+
+# Abstracts the execution of the given operation
+execute()
+
+# Send the QUIT command to the FTP server
+user_command = "QUIT\r\n"
+sock.sendall(user_command.encode("utf-8"))
