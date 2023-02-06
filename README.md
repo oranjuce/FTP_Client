@@ -9,17 +9,13 @@ Python3
 ## Usage
 
 The client can be executed by running the following command in the terminal:
-'''
-./3700ftp <operation> <parameters>
-'''
+`./3700ftp <operation> <parameters>`
 
-- <operation> specifies the FTP command to execute, e.g. ls.
+- `operation` specifies the FTP command to execute, e.g. ls.
 
-- <parameters> is a list of one or more parameters, including an FTP URL that specifies the server and file or directory to interact with. The FTP URL should have the following format:
+- `parameters` is a list of one or more parameters, including an FTP URL that specifies the server and file or directory to interact with. The FTP URL should have the following format:
 
-'''
-ftp://[USER[:PASSWORD]@]HOST[:PORT]/PATH
-'''
+`ftp://[USER[:PASSWORD]@]HOST[:PORT]/PATH`
 
 ## Functionality
 The client implements the following FTP commands:
