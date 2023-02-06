@@ -231,7 +231,7 @@ def copy():
             sock.sendall(type_command.encode("utf-8"))
 
             # Receive the response from the FTP server
-            response = sock.recv(4096).decode("utf-8")
+            response = sock.recv(8192).decode("utf-8")
             communicate_response(response)
 
             with open(PARAMETERS[0], 'rb') as file:
